@@ -582,6 +582,10 @@ static float run_z_probe() {
   #endif
 
   #if ENABLED(FIX_MOUNTED_PROBE)
+    // AutohomeZflag is set when home_z_safely is triggered during G28 when configured to home Z last
+    // Don't know why this isn't just using home_flag but whatever.
+    // Note that digitalWrite HIGH is the same as WRITE(COM_PIN,0), digitalWrite LOW is as WRITE(COM_PIN,1)
+    // c.f. Marlin.cpp - see also there commentary on what COM_PIN might achieve.
     if((0 == READ(OPTO_SWITCH_PIN)) && (AutohomeZflag == true))
     {
       digitalWrite(COM_PIN, HIGH);
@@ -617,6 +621,7 @@ static float run_z_probe() {
       #endif
 
       const float z = current_position.z;
+      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("Probe ", p, " Z:", z);
 
       #if EXTRA_PROBING
         // Insert Z measurement into probes[]. Keep it sorted ascending.
@@ -664,6 +669,7 @@ static float run_z_probe() {
     #endif
 
     const float measured_z = probes_total * RECIPROCAL(MULTIPLE_PROBING);
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("Probe measured Z:", measured_z);
 
   #elif TOTAL_PROBING == 2
 
@@ -729,7 +735,9 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
   // Move the probe to the starting XYZ
   do_blocking_move_to(npos);
 
-  #ifdef FIX_MOUNTED_PROBE
+  #if ENABLED(FIX_MOUNTED_PROBE)
+    // See also Marlin.cpp for what commentary on what COM_PIN might achieve.
+    // This occurrence sets it 0 (active, high?) + delay(200), with the set 1 (inactive, low?) after the probe action.
     if(0 == READ(OPTO_SWITCH_PIN))
     {
       delay(100);
@@ -760,7 +768,9 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
      
   }
 
-  #ifdef FIX_MOUNTED_PROBE
+  #if ENABLED(FIX_MOUNTED_PROBE)
+    // See also Marlin.cpp for what commentary on what COM_PIN might achieve.
+    // This is the set 1 (inactive, low?) after the probe action.
     WRITE(COM_PIN, 1);
   #endif
 
