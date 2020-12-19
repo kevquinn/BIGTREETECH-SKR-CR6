@@ -697,6 +697,9 @@ void idle(
   #endif
 
   #if ENABLED(FIX_MOUNTED_PROBE)
+    // Not sure what COM_PIN does; it is part of the strain gauge circuit.
+    // Guessing that this sequence causes the strain guage input to trigger the ISR?
+    // Gated to only happen during homing, and when the Z is low (opto switch beam broken)
     if((0 == READ(OPTO_SWITCH_PIN)) && (home_flag == true))
     {
       endstops.enable_z_probe(true);
