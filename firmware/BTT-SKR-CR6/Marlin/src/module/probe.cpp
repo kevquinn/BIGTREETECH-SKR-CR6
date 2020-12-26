@@ -448,6 +448,21 @@ bool set_probe_deployed(const bool deploy) {
   const char msg_wait_for_bed_heating[25] PROGMEM = "Wait for bed heating...\n";
 #endif
 
+static bool read_probe_trigger() {
+  bool probe_triggered =
+    #if BOTH(DELTA, SENSORLESS_PROBING)
+      endstops.trigger_state() & (_BV(X_MIN) | _BV(Y_MIN) | _BV(Z_MIN))
+    #else
+      #if ENABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN)
+        TEST(endstops.trigger_state(),Z_MIN)
+      #else
+        TEST(endstops.trigger_state(),Z_MIN_PROBE)
+      #endif
+    #endif
+  ;
+  return(probe_triggered);
+}
+
 static bool do_probe_move(const float z, const feedRate_t fr_mm_s) {
   if (DEBUGGING(LEVELING)) DEBUG_POS(">>> do_probe_move", current_position);
 
@@ -480,23 +495,24 @@ static bool do_probe_move(const float z, const feedRate_t fr_mm_s) {
     probing_pause(true);
   #endif
 
+  // Make sure probe is not already triggered, attempt to remediate by pausing to allow system mechanics to stablise
+  bool pre_trigger=read_probe_trigger();
+  if (pre_trigger) {
+    if (DEBUGGING(LEVELING)) DEBUG_POS("Probe already triggered before Z scan, pausing 1s to remediate at", current_position);
+    delay(1000); // Can be because the PTFE tube hasn't settled, and is pulling the hot end up enough to trigger the strain gauge
+    pre_trigger=read_probe_trigger();
+    if (pre_trigger && DEBUGGING(LEVELING)) DEBUG_POS("Probe didn't un-trigger before Z scan at", current_position);
+  } else
+  {
+    if (DEBUGGING(LEVELING)) DEBUG_POS("Probe correctly not triggered before Z scan at", current_position);
+  }
+  
+
   // Move down until the probe is triggered
   do_blocking_move_to_z(z, fr_mm_s);
 
   // Check to see if the probe was triggered
-  const bool probe_triggered =
-    #if BOTH(DELTA, SENSORLESS_PROBING)
-      endstops.trigger_state() & (_BV(X_MIN) | _BV(Y_MIN) | _BV(Z_MIN))
-    #else
-      TEST(endstops.trigger_state(),
-        #if ENABLED(Z_MIN_PROBE_USES_Z_MIN_ENDSTOP_PIN)
-          Z_MIN
-        #else
-          Z_MIN_PROBE
-        #endif
-      )
-    #endif
-  ;
+  const bool probe_triggered = read_probe_trigger();
 
   #if QUIET_PROBING
     probing_pause(false);
@@ -527,7 +543,8 @@ static bool do_probe_move(const float z, const feedRate_t fr_mm_s) {
 
   if (DEBUGGING(LEVELING)) DEBUG_POS("<<< do_probe_move", current_position);
 
-  return !probe_triggered;
+  // If the probe triggered before the probe movement or didn't trigger at all, the probe failed
+  return (pre_trigger || !probe_triggered);
 }
 
 /**
@@ -586,6 +603,12 @@ static float run_z_probe() {
     // Don't know why this isn't just using home_flag but whatever.
     // Note that digitalWrite HIGH is the same as WRITE(COM_PIN,0), digitalWrite LOW is as WRITE(COM_PIN,1)
     // c.f. Marlin.cpp - see also there commentary on what COM_PIN might achieve.
+    // Hmm - note it resets AutohomeZflag here. So if you run G29 twice in a row, does that mean this code doesn't
+    // happen without an intervening G28? This may explain why the second G29 just climbs the walls.
+    // Really do need to find out what the strain gauge processor does with all this; the Creality code seems
+    // to be quite inconsistent in how it drives COM_PIN to manage the strain gauge trigger
+    // Is this sequence actually resetting a zero measurement point on the probe?
+    // Noticed at the end of G29, the probe led was lit unless I nudged the ptfe tube; G28 reset it again
     if((0 == READ(OPTO_SWITCH_PIN)) && (AutohomeZflag == true))
     {
       digitalWrite(COM_PIN, HIGH);
@@ -738,6 +761,7 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
   #if ENABLED(FIX_MOUNTED_PROBE)
     // See also Marlin.cpp for what commentary on what COM_PIN might achieve.
     // This occurrence sets it 0 (active, high?) + delay(200), with the set 1 (inactive, low?) after the probe action.
+    // Note; this is different to the usage above in run_z_probe() which does the COM_PIN 0 then 1 if AutoHomeZ is true
     if(0 == READ(OPTO_SWITCH_PIN))
     {
       delay(100);
@@ -771,6 +795,7 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
   #if ENABLED(FIX_MOUNTED_PROBE)
     // See also Marlin.cpp for what commentary on what COM_PIN might achieve.
     // This is the set 1 (inactive, low?) after the probe action.
+    // Odd - as this is different from other usage where it looks more like "tare" than "enable"
     WRITE(COM_PIN, 1);
   #endif
 
