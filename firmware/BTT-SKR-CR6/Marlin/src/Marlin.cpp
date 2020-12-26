@@ -193,7 +193,6 @@
 #endif
 
 bool home_flag = false;
-bool AutohomeZflag = false;
 
 const char NUL_STR[] PROGMEM = "",
            G28_STR[] PROGMEM = "G28",
@@ -697,16 +696,12 @@ void idle(
   #endif
 
   #if ENABLED(FIX_MOUNTED_PROBE)
-    // Not sure what COM_PIN does; it is part of the strain gauge circuit.
-    // Guessing that this sequence causes the strain guage input to trigger the ISR?
-    // Gated to only happen during homing, and when the Z is low (opto switch beam broken)
+    // If G28 homing in progress, enable Z probing and re-zero the strain gauge if the optical sensor beam is broken
+    // (i.e. the nozzle is close to the bed). I'm not convinced this makes any sense.
     if((0 == READ(OPTO_SWITCH_PIN)) && (home_flag == true))
     {
       endstops.enable_z_probe(true);
-      delay(100);
-      WRITE(COM_PIN, 0);
-      delay(200);
-      WRITE(COM_PIN, 1);
+      rezero_and_enable_straingauge_probe();
     }
   #endif
 

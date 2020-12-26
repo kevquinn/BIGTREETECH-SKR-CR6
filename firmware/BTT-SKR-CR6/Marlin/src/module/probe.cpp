@@ -448,6 +448,27 @@ bool set_probe_deployed(const bool deploy) {
   const char msg_wait_for_bed_heating[25] PROGMEM = "Wait for bed heating...\n";
 #endif
 
+#if ENABLED(FIX_MOUNTED_PROBE)
+
+  void rezero_and_enable_straingauge_probe() {
+    digitalWrite(COM_PIN, HIGH);
+    delay(200);
+    digitalWrite(COM_PIN, LOW);
+    delay(200);
+  }
+
+  void enable_straingauge_probe() {
+    digitalWrite(COM_PIN, LOW);
+    delay(200);
+  }
+
+  void reset_straingauge_probe() {
+    digitalWrite(COM_PIN, HIGH);
+    delay(200);
+  }
+
+#endif
+
 static bool read_probe_trigger() {
   bool probe_triggered =
     #if BOTH(DELTA, SENSORLESS_PROBING)
@@ -563,6 +584,21 @@ static float run_z_probe() {
   // If Z isn't known then probe to -10mm.
   const float z_probe_low_point = TEST(axis_known_position, Z_AXIS) ? -probe_offset.z + Z_PROBE_LOW_POINT : -10.0;
 
+  #if ENABLED(FIX_MOUNTED_PROBE)
+
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: probe trigger at start of probe ", read_probe_trigger());
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
+    // Ensure strain gauge is zeroed - if the Opto is 1 then we know we're not on the bed, and we've just finished a move so we're stationary
+    // It's not unusual, following a move to the left, for the strain gauge to trigger due to pull from the bowden tube.
+    if((1 == READ(OPTO_SWITCH_PIN)))
+    {
+      rezero_and_enable_straingauge_probe();
+      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: probe trigger after reset ", read_probe_trigger());
+      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor after reset ", READ(OPTO_SWITCH_PIN));
+    }
+
+  #endif
+
   // Double-probing does a fast probe followed by a slow probe
   #if TOTAL_PROBING == 2
 
@@ -577,7 +613,8 @@ static float run_z_probe() {
 
     const float first_probe_z = current_position.z;
 
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("1st Probe Z:", first_probe_z);
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: 1st Probe Z: ", first_probe_z);
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
 
     // Raise to give the probe clearance
     do_blocking_move_to_z(current_position.z + Z_CLEARANCE_MULTI_PROBE, MMM_TO_MMS(Z_PROBE_SPEED_FAST));
@@ -599,23 +636,18 @@ static float run_z_probe() {
   #endif
 
   #if ENABLED(FIX_MOUNTED_PROBE)
-    // AutohomeZflag is set when home_z_safely is triggered during G28 when configured to home Z last
-    // Don't know why this isn't just using home_flag but whatever.
-    // Note that digitalWrite HIGH is the same as WRITE(COM_PIN,0), digitalWrite LOW is as WRITE(COM_PIN,1)
-    // c.f. Marlin.cpp - see also there commentary on what COM_PIN might achieve.
-    // Hmm - note it resets AutohomeZflag here. So if you run G29 twice in a row, does that mean this code doesn't
-    // happen without an intervening G28? This may explain why the second G29 just climbs the walls.
-    // Really do need to find out what the strain gauge processor does with all this; the Creality code seems
-    // to be quite inconsistent in how it drives COM_PIN to manage the strain gauge trigger
-    // Is this sequence actually resetting a zero measurement point on the probe?
-    // Noticed at the end of G29, the probe led was lit unless I nudged the ptfe tube; G28 reset it again
-    if((0 == READ(OPTO_SWITCH_PIN)) && (AutohomeZflag == true))
+    // Re-zero the strain gauge if the optical sensor beam is broken
+    // (i.e. the nozzle is close to the bed)
+
+    // This also used to be conditional on a weird flag AutohomeZflag which sometimes indicated
+    // G28 had just been run - effectively requiring G28 prior to G29 for G29 to work at all.
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: probe trigger before rzp reset ", read_probe_trigger());
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
+    if((0 == READ(OPTO_SWITCH_PIN)))
     {
-      digitalWrite(COM_PIN, HIGH);
-      delay(200);
-      digitalWrite(COM_PIN, LOW);
-      delay(200);
-      AutohomeZflag = false;
+      rezero_and_enable_straingauge_probe();
+      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: probe trigger after rzp reset", read_probe_trigger());
+      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
     }
   #endif
 
@@ -644,7 +676,10 @@ static float run_z_probe() {
       #endif
 
       const float z = current_position.z;
-      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("Probe ", p, " Z:", z);
+      #if TOTAL_PROBING > 2
+        if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: Probe ", p, " Z:", z);
+        if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
+      #endif
 
       #if EXTRA_PROBING
         // Insert Z measurement into probes[]. Keep it sorted ascending.
@@ -692,13 +727,15 @@ static float run_z_probe() {
     #endif
 
     const float measured_z = probes_total * RECIPROCAL(MULTIPLE_PROBING);
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("Probe measured Z:", measured_z);
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: Probe measured Z:", measured_z);
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
 
   #elif TOTAL_PROBING == 2
 
     const float z2 = current_position.z;
 
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("2nd Probe Z:", z2, " Discrepancy:", first_probe_z - z2);
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: 2nd Probe Z:", z2, " Discrepancy:", first_probe_z - z2);
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
 
     // Return a weighted average of the fast and slow probes
     const float measured_z = (z2 * 3.0 + first_probe_z * 2.0) * 0.2;
@@ -759,14 +796,15 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
   do_blocking_move_to(npos);
 
   #if ENABLED(FIX_MOUNTED_PROBE)
-    // See also Marlin.cpp for what commentary on what COM_PIN might achieve.
-    // This occurrence sets it 0 (active, high?) + delay(200), with the set 1 (inactive, low?) after the probe action.
-    // Note; this is different to the usage above in run_z_probe() which does the COM_PIN 0 then 1 if AutoHomeZ is true
+    // Disable the strain guage if the optical sensor beam is not broken
+    // (i.e. we believe the nozzle is higer than the optical beam break point)
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: probe trigger before reset ", read_probe_trigger());
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: optical sensor ", READ(OPTO_SWITCH_PIN));
     if(0 == READ(OPTO_SWITCH_PIN))
     {
-      delay(100);
-      WRITE(COM_PIN, 0);
-      delay(200);
+      reset_straingauge_probe();
+      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: probe trigger after reset ", read_probe_trigger());
+      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: optical sensor ", READ(OPTO_SWITCH_PIN));
     }
   #endif
 
@@ -793,10 +831,10 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
   }
 
   #if ENABLED(FIX_MOUNTED_PROBE)
-    // See also Marlin.cpp for what commentary on what COM_PIN might achieve.
-    // This is the set 1 (inactive, low?) after the probe action.
-    // Odd - as this is different from other usage where it looks more like "tare" than "enable"
-    WRITE(COM_PIN, 1);
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: probe trigger after probe ", read_probe_trigger());
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: optical sensor ", READ(OPTO_SWITCH_PIN));
+    // Re-enable the strain gauge
+    enable_straingauge_probe();
   #endif
 
   if (verbose_level > 2) {

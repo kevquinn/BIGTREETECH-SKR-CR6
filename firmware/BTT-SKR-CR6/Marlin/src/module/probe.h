@@ -150,3 +150,9 @@
 #if QUIET_PROBING
   void probing_pause(const bool p);
 #endif
+
+#if ENABLED(FIX_MOUNTED_PROBE)
+  void rezero_and_enable_straingauge_probe();
+  void enable_straingauge_probe();
+  void reset_straingauge_probe();
+#endif
