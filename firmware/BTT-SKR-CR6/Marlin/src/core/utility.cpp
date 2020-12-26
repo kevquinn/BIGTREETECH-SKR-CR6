@@ -44,39 +44,37 @@ void safe_delay(millis_t ms) {
   #include "../feature/bedlevel/bedlevel.h"
 
   void log_machine_info() {
-    SERIAL_ECHOLNPGM("Machine Type: "
-      #if ENABLED(DELTA)
-        "Delta"
-      #elif IS_SCARA
-        "SCARA"
-      #elif IS_CORE
-        "Core"
-      #else
-        "Cartesian"
-      #endif
-    );
+    #if ENABLED(DELTA)
+      #define UTILITY_MACHINE_TYPE "Delta"
+    #elif IS_SCARA
+      #define UTILITY_MACHINE_TYPE "SCARA"
+    #elif IS_CORE
+      #define UTILITY_MACHINE_TYPE "Core"
+    #else
+      #define UTILITY_MACHINE_TYPE "Cartesian"
+    #endif
+    SERIAL_ECHOLNPGM("Machine Type: " UTILITY_MACHINE_TYPE);
 
-    SERIAL_ECHOLNPGM("Probe: "
-      #if ENABLED(PROBE_MANUALLY)
-        "PROBE_MANUALLY"
-      #elif ENABLED(FIX_MOUNTED_PROBE)
-        "FIX_MOUNTED_PROBE"
-      #elif ENABLED(BLTOUCH)
-        "BLTOUCH"
-      #elif HAS_Z_SERVO_PROBE
-        "SERVO PROBE"
-      #elif ENABLED(TOUCH_MI_PROBE)
-        "TOUCH_MI_PROBE"
-      #elif ENABLED(Z_PROBE_SLED)
-        "Z_PROBE_SLED"
-      #elif ENABLED(Z_PROBE_ALLEN_KEY)
-        "Z_PROBE_ALLEN_KEY"
-      #elif ENABLED(SOLENOID_PROBE)
-        "SOLENOID_PROBE"
-      #else
-        "NONE"
-      #endif
-    );
+    #if ENABLED(PROBE_MANUALLY)
+      #define UTILITY_PROBE_TYPE "PROBE_MANUALLY"
+    #elif ENABLED(FIX_MOUNTED_PROBE)
+      #define UTILITY_PROBE_TYPE "FIX_MOUNTED_PROBE"
+    #elif ENABLED(BLTOUCH)
+      #define UTILITY_PROBE_TYPE "BLTOUCH"
+    #elif HAS_Z_SERVO_PROBE
+      #define UTILITY_PROBE_TYPE "SERVO PROBE"
+    #elif ENABLED(TOUCH_MI_PROBE)
+      #define UTILITY_PROBE_TYPE "TOUCH_MI_PROBE"
+    #elif ENABLED(Z_PROBE_SLED)
+      #define UTILITY_PROBE_TYPE "Z_PROBE_SLED"
+    #elif ENABLED(Z_PROBE_ALLEN_KEY)
+      #define UTILITY_PROBE_TYPE "Z_PROBE_ALLEN_KEY"
+    #elif ENABLED(SOLENOID_PROBE)
+      #define UTILITY_PROBE_TYPE "SOLENOID_PROBE"
+    #else
+      #define UTILITY_PROBE_TYPE "NONE"
+    #endif
+    SERIAL_ECHOLNPGM("Probe: " UTILITY_PROBE_TYPE);
 
     #if HAS_BED_PROBE
       SERIAL_ECHOPAIR_P(PSTR("Probe Offset X"), probe_offset.x, SP_Y_STR, probe_offset.y, SP_Z_STR, probe_offset.z);
@@ -116,17 +114,16 @@ void safe_delay(millis_t ms) {
     #endif
 
     #if HAS_ABL_OR_UBL
-      SERIAL_ECHOLNPGM("Auto Bed Leveling: "
-        #if ENABLED(AUTO_BED_LEVELING_LINEAR)
-          "LINEAR"
-        #elif ENABLED(AUTO_BED_LEVELING_BILINEAR)
-          "BILINEAR"
-        #elif ENABLED(AUTO_BED_LEVELING_3POINT)
-          "3POINT"
-        #elif ENABLED(AUTO_BED_LEVELING_UBL)
-          "UBL"
-        #endif
-      );
+      #if ENABLED(AUTO_BED_LEVELING_LINEAR)
+        #define UTILITY_ABL_TYPE "LINEAR"
+      #elif ENABLED(AUTO_BED_LEVELING_BILINEAR)
+        #define UTILITY_ABL_TYPE "BILINEAR"
+      #elif ENABLED(AUTO_BED_LEVELING_3POINT)
+        #define UTILITY_ABL_TYPE "3POINT"
+      #elif ENABLED(AUTO_BED_LEVELING_UBL)
+        #define UTILITY_ABL_TYPE "UBL"
+      #endif
+      SERIAL_ECHOLNPGM("Auto Bed Leveling: " UTILITY_ABL_TYPE);
       if (planner.leveling_active) {
         SERIAL_ECHOLNPGM(" (enabled)");
         #if ENABLED(ENABLE_LEVELING_FADE_HEIGHT)
