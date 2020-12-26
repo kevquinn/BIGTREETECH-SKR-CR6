@@ -241,11 +241,9 @@ extern char waitway;
 extern int change_page_font;
 extern int Update_Time_Value;
 extern unsigned char AxisUnitMode;
-//extern bool home_flag;
 extern bool heat_flag;
 extern bool print_finish;
 extern bool finish_home;
-//extern bool AutohomeZflag;
 extern char commandbuf[30];
 
 extern bool StartPrint_flag;

@@ -1504,13 +1504,6 @@ void homeaxis(const AxisEnum axis) {
     }
   #endif
 
-  #if ENABLED(FIX_MOUNTED_PROBE)
-    if(axis == Z_AXIS)
-    {
-      AutohomeZflag = true;
-    }
-  #endif
-
   // Fast move towards endstop until triggered
   if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPGM("Home 1 Fast:");
 

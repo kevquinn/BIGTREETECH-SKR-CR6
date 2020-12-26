@@ -92,8 +92,6 @@ unsigned long VolumeSet = 0x80;
 bool print_finish = false;
 bool finish_home = false;
 
-// bool home_flag = false;
-// bool AutohomeZflag = false;
 char cmdbuf[20] = {0};
 
 unsigned short int checktime = 0;
