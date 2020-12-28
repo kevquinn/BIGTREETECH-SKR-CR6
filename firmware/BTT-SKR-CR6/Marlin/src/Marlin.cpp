@@ -193,6 +193,7 @@
 #endif
 
 bool home_flag = false;
+bool close_to_bed = false;
 
 const char NUL_STR[] PROGMEM = "",
            G28_STR[] PROGMEM = "G28",
@@ -688,20 +689,23 @@ void idle(
   #else
     ui.update();
   #endif
-  #if ENABLED(FIX_MOUNTED_PROBE)
-    if((IS_SD_PRINTING() == true) && home_flag == false) //  printing and no homing
-    {
-      endstops.enable_z_probe(false);
-    }
-  #endif
 
   #if ENABLED(FIX_MOUNTED_PROBE)
-    // If G28 homing in progress, enable Z probing and re-zero the strain gauge if the optical sensor beam is broken
-    // (i.e. the nozzle is close to the bed). I'm not convinced this makes any sense.
-    if((0 == READ(OPTO_SWITCH_PIN)) && (home_flag == true))
+    // Enable or disable Z probe on transition through the bed proximity sensor
+    if (1 == READ(OPTO_SWITCH_PIN)) {
+      if (close_to_bed)
+      {
+          endstops.enable_z_probe(false);
+          close_to_bed = false;
+      }
+    }
+    else
     {
-      endstops.enable_z_probe(true);
-      rezero_and_enable_straingauge_probe();
+      if (!close_to_bed)
+      {
+        endstops.enable_z_probe(true);
+        close_to_bed = true;
+      }
     }
   #endif
 

@@ -449,24 +449,12 @@ bool set_probe_deployed(const bool deploy) {
 #endif
 
 #if ENABLED(FIX_MOUNTED_PROBE)
-
-  void rezero_and_enable_straingauge_probe() {
+  static void rezero_and_enable_straingauge_probe() {
     digitalWrite(COM_PIN, HIGH);
     delay(200);
     digitalWrite(COM_PIN, LOW);
     delay(200);
   }
-
-  void enable_straingauge_probe() {
-    digitalWrite(COM_PIN, LOW);
-    delay(200);
-  }
-
-  void reset_straingauge_probe() {
-    digitalWrite(COM_PIN, HIGH);
-    delay(200);
-  }
-
 #endif
 
 static bool read_probe_trigger() {
@@ -516,19 +504,6 @@ static bool do_probe_move(const float z, const feedRate_t fr_mm_s) {
     probing_pause(true);
   #endif
 
-  // Make sure probe is not already triggered, attempt to remediate by pausing to allow system mechanics to stablise
-  bool pre_trigger=read_probe_trigger();
-  if (pre_trigger) {
-    if (DEBUGGING(LEVELING)) DEBUG_POS("Probe already triggered before Z scan, pausing 1s to remediate at", current_position);
-    delay(1000); // Can be because the PTFE tube hasn't settled, and is pulling the hot end up enough to trigger the strain gauge
-    pre_trigger=read_probe_trigger();
-    if (pre_trigger && DEBUGGING(LEVELING)) DEBUG_POS("Probe didn't un-trigger before Z scan at", current_position);
-  } else
-  {
-    if (DEBUGGING(LEVELING)) DEBUG_POS("Probe correctly not triggered before Z scan at", current_position);
-  }
-  
-
   // Move down until the probe is triggered
   do_blocking_move_to_z(z, fr_mm_s);
 
@@ -564,8 +539,8 @@ static bool do_probe_move(const float z, const feedRate_t fr_mm_s) {
 
   if (DEBUGGING(LEVELING)) DEBUG_POS("<<< do_probe_move", current_position);
 
-  // If the probe triggered before the probe movement or didn't trigger at all, the probe failed
-  return (pre_trigger || !probe_triggered);
+  // If the probe didn't trigger, probing failed
+  return (!probe_triggered);
 }
 
 /**
@@ -583,21 +558,6 @@ static float run_z_probe() {
   // Stop the probe before it goes too low to prevent damage.
   // If Z isn't known then probe to -10mm.
   const float z_probe_low_point = TEST(axis_known_position, Z_AXIS) ? -probe_offset.z + Z_PROBE_LOW_POINT : -10.0;
-
-  #if ENABLED(FIX_MOUNTED_PROBE)
-
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: probe trigger at start of probe ", read_probe_trigger());
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
-    // Ensure strain gauge is zeroed - if the Opto is 1 then we know we're not on the bed, and we've just finished a move so we're stationary
-    // It's not unusual, following a move to the left, for the strain gauge to trigger due to pull from the bowden tube.
-    if((1 == READ(OPTO_SWITCH_PIN)))
-    {
-      rezero_and_enable_straingauge_probe();
-      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: probe trigger after reset ", read_probe_trigger());
-      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor after reset ", READ(OPTO_SWITCH_PIN));
-    }
-
-  #endif
 
   // Double-probing does a fast probe followed by a slow probe
   #if TOTAL_PROBING == 2
@@ -633,22 +593,6 @@ static float run_z_probe() {
 
   #ifdef EXTRA_PROBING
     float probes[TOTAL_PROBING];
-  #endif
-
-  #if ENABLED(FIX_MOUNTED_PROBE)
-    // Re-zero the strain gauge if the optical sensor beam is broken
-    // (i.e. the nozzle is close to the bed)
-
-    // This also used to be conditional on a weird flag AutohomeZflag which sometimes indicated
-    // G28 had just been run - effectively requiring G28 prior to G29 for G29 to work at all.
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: probe trigger before rzp reset ", read_probe_trigger());
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
-    if((0 == READ(OPTO_SWITCH_PIN)))
-    {
-      rezero_and_enable_straingauge_probe();
-      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: probe trigger after rzp reset", read_probe_trigger());
-      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
-    }
   #endif
 
   #if TOTAL_PROBING > 2
@@ -795,20 +739,13 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
   // Move the probe to the starting XYZ
   do_blocking_move_to(npos);
 
-  #if ENABLED(FIX_MOUNTED_PROBE)
-    // Disable the strain guage if the optical sensor beam is not broken
-    // (i.e. we believe the nozzle is higer than the optical beam break point)
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: probe trigger before reset ", read_probe_trigger());
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: optical sensor ", READ(OPTO_SWITCH_PIN));
-    if(0 == READ(OPTO_SWITCH_PIN))
-    {
-      reset_straingauge_probe();
-      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: probe trigger after reset ", read_probe_trigger());
-      if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: optical sensor ", READ(OPTO_SWITCH_PIN));
-    }
-  #endif
-
   float measured_z = NAN;
+
+  #if ENABLED(FIX_MOUNTED_PROBE)
+    // Enable the Z probe, so that the strain gauge trigger is seen
+    endstops.enable_z_probe(true); // must do this before DEPLOY_PROBE() which depends on it
+    rezero_and_enable_straingauge_probe();
+  #endif
 
   if (!DEPLOY_PROBE()) {
 
@@ -818,8 +755,7 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
 
     if (big_raise || raise_after == PROBE_PT_RAISE)
     {
-     do_blocking_move_to_z(current_position.z + (big_raise ? 25 : Z_CLEARANCE_BETWEEN_PROBES), MMM_TO_MMS(Z_PROBE_SPEED_FAST));
-     
+      do_blocking_move_to_z(current_position.z + (big_raise ? 25 : Z_CLEARANCE_BETWEEN_PROBES), MMM_TO_MMS(Z_PROBE_SPEED_FAST));
     }
      
     else if (raise_after == PROBE_PT_STOW)
@@ -829,13 +765,6 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
     }
      
   }
-
-  #if ENABLED(FIX_MOUNTED_PROBE)
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: probe trigger after probe ", read_probe_trigger());
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... pap: optical sensor ", READ(OPTO_SWITCH_PIN));
-    // Re-enable the strain gauge
-    enable_straingauge_probe();
-  #endif
 
   if (verbose_level > 2) {
     SERIAL_ECHOPAIR_F("Bed X: ", LOGICAL_X_POSITION(rx), 3);
