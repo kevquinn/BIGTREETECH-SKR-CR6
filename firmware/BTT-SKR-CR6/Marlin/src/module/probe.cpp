@@ -436,27 +436,33 @@ bool set_probe_deployed(const bool deploy) {
   }
 #endif
 
-/**
- * @brief Used by run_z_probe to do a single Z probe move.
- *
- * @param  z        Z destination
- * @param  fr_mm_s  Feedrate in mm/s
- * @return true to indicate an error
- */
-
 #if HAS_HEATED_BED && ENABLED(WAIT_FOR_BED_HEATER)
   const char msg_wait_for_bed_heating[25] PROGMEM = "Wait for bed heating...\n";
 #endif
 
 #if ENABLED(FIX_MOUNTED_PROBE)
-  static void rezero_and_enable_straingauge_probe() {
+/**
+ * @brief Re-zero ("tare") the strain gauge
+ *
+ */
+  static void rezero_and_enable_straingauge() {
+    const uint32 pulse_length_ms=200;
+    static uint32 last_rezero_time=0;
+    // Ensure at least pulse length milliseconds have occurred since last zero-ing
+    // Note unsigned arithmetic yields correct results on wrap-around of the millisecond timer (just under 50 days)
+    uint32 time_since_last=millis()-last_rezero_time;
+    if (time_since_last<pulse_length_ms) delay(pulse_length_ms-time_since_last);
     digitalWrite(COM_PIN, HIGH);
-    delay(200);
+    delay(pulse_length_ms);
     digitalWrite(COM_PIN, LOW);
-    delay(200);
+    last_rezero_time=millis();
   }
 #endif
 
+/**
+ * @brief Read the Z probe trigger (Z min end-stop)
+ *
+ */
 static bool read_probe_trigger() {
   bool probe_triggered =
     #if BOTH(DELTA, SENSORLESS_PROBING)
@@ -472,6 +478,13 @@ static bool read_probe_trigger() {
   return(probe_triggered);
 }
 
+/**
+ * @brief Used by run_z_probe to do a single Z probe move.
+ *
+ * @param  z        Z destination
+ * @param  fr_mm_s  Feedrate in mm/s
+ * @return true to indicate an error
+ */
 static bool do_probe_move(const float z, const feedRate_t fr_mm_s) {
   if (DEBUGGING(LEVELING)) DEBUG_POS(">>> do_probe_move", current_position);
 
@@ -697,6 +710,10 @@ static float run_z_probe() {
 }
 
 /**
+ * @brief Probe at the requested XY position.
+ * 
+ * @return Probed Z position or NAN on error
+ * 
  * - Move to the given XY
  * - Deploy the probe, if not already deployed
  * - Probe the bed, get the Z position
@@ -744,7 +761,7 @@ float probe_at_point(const float &rx, const float &ry, const ProbePtRaise raise_
   #if ENABLED(FIX_MOUNTED_PROBE)
     // Enable the Z probe, so that the strain gauge trigger is seen
     endstops.enable_z_probe(true); // must do this before DEPLOY_PROBE() which depends on it
-    rezero_and_enable_straingauge_probe();
+    rezero_and_enable_straingauge();
   #endif
 
   if (!DEPLOY_PROBE()) {
