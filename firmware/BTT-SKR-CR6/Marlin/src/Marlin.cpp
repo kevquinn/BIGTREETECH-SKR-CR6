@@ -1211,10 +1211,10 @@ void setup() {
 
     rtscheck.RTS_Init();
     #ifdef FIX_MOUNTED_PROBE
-      OUT_WRITE(COM_PIN, 1);
+      OUT_WRITE(STRAIN_GAUGE_ENABLE_PIN, HIGH);
       SET_INPUT(CHECK_MATWEIAL);
       SET_INPUT(OPTO_SWITCH_PIN);
-      OUT_WRITE(LED_CONTROL_PIN, 0);
+      OUT_WRITE(LED_CONTROL_PIN, LOW);
 		#endif
   //  SERIAL_ECHO("Test-1\r\n");
   #endif

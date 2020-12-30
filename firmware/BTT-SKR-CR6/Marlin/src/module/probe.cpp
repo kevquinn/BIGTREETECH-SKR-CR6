@@ -446,16 +446,16 @@ bool set_probe_deployed(const bool deploy) {
  *
  */
   static void rezero_and_enable_straingauge() {
-    const uint32 pulse_length_ms=200;
-    static uint32 last_rezero_time=0;
-    // Ensure at least pulse length milliseconds have occurred since last zero-ing
-    // Note unsigned arithmetic yields correct results on wrap-around of the millisecond timer (just under 50 days)
-    uint32 time_since_last=millis()-last_rezero_time;
-    if (time_since_last<pulse_length_ms) delay(pulse_length_ms-time_since_last);
-    digitalWrite(COM_PIN, HIGH);
-    delay(pulse_length_ms);
-    digitalWrite(COM_PIN, LOW);
-    last_rezero_time=millis();
+    #define STRAIN_GAUGE_RESET_PULSE_MS 200
+    static millis_t next_earliest_rezero_time=0;
+    // Ensure at least STRAIN_GAUGE_RESET_PULSE_MS milliseconds have occurred since last zero-ing
+    const millis_t now = millis();
+    if (ELAPSED(now, next_earliest_rezero_time))
+      delay(STRAIN_GAUGE_RESET_PULSE_MS);
+    WRITE(STRAIN_GAUGE_ENABLE_PIN,LOW);
+    delay(STRAIN_GAUGE_RESET_PULSE_MS);
+    WRITE(STRAIN_GAUGE_ENABLE_PIN,HIGH);
+    next_earliest_rezero_time=millis()+STRAIN_GAUGE_RESET_PULSE_MS;
   }
 #endif
 
@@ -586,9 +586,6 @@ static float run_z_probe() {
 
     const float first_probe_z = current_position.z;
 
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: 1st Probe Z: ", first_probe_z);
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
-
     // Raise to give the probe clearance
     do_blocking_move_to_z(current_position.z + Z_CLEARANCE_MULTI_PROBE, MMM_TO_MMS(Z_PROBE_SPEED_FAST));
 
@@ -601,6 +598,7 @@ static float run_z_probe() {
       // Probe down fast. If the probe never triggered, raise for probe clearance
       if (!do_probe_move(z, MMM_TO_MMS(Z_PROBE_SPEED_FAST)))
         do_blocking_move_to_z(current_position.z + Z_CLEARANCE_BETWEEN_PROBES, MMM_TO_MMS(Z_PROBE_SPEED_FAST));
+      if (DEBUGGING(LEVELING)) DEBUG_ECHOLN("... did a quick down first");
     }
   #endif
 
@@ -634,8 +632,7 @@ static float run_z_probe() {
 
       const float z = current_position.z;
       #if TOTAL_PROBING > 2
-        if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: Probe ", p, " Z:", z);
-        if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
+        if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... probe ", p, " value ", z);
       #endif
 
       #if EXTRA_PROBING
@@ -684,23 +681,26 @@ static float run_z_probe() {
     #endif
 
     const float measured_z = probes_total * RECIPROCAL(MULTIPLE_PROBING);
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: Probe measured Z:", measured_z);
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
 
   #elif TOTAL_PROBING == 2
 
     const float z2 = current_position.z;
 
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: 2nd Probe Z:", z2, " Discrepancy:", first_probe_z - z2);
-    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... rzp: optical sensor ", READ(OPTO_SWITCH_PIN));
+    #if ENABLED(FIX_MOUNTED_PROBE)
+      // Use slow probe measurement
+      const float measured_z = z2;
+    #else
+      // Return a weighted average of the fast and slow probes
+      const float measured_z = (z2 * 3.0 + first_probe_z * 2.0) * 0.2;
+    #endif
 
-    // Return a weighted average of the fast and slow probes
-    const float measured_z = (z2 * 3.0 + first_probe_z * 2.0) * 0.2;
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... probe values; first: ", first_probe_z, " second: ", z2, " measured: ", measured_z);
 
   #else
 
     // Return the single probe result
     const float measured_z = current_position.z;
+    if (DEBUGGING(LEVELING)) DEBUG_ECHOLNPAIR("... probe value ", measured_z);
 
   #endif
 

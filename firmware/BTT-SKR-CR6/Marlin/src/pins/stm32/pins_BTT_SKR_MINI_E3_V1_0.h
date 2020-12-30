@@ -44,7 +44,7 @@
   #define SERVO0_PIN       PB0  // BLTouch OUT PIN
 #elif ENABLED(FIX_MOUNTED_PROBE)
   #define Z_MIN_PIN        PC2
-  #define COM_PIN          PC14//PA1
+  #define STRAIN_GUAGE_ENABLE_PIN PC14//PA1
 #else
   #define Z_MIN_PIN        PA7
 #endif
